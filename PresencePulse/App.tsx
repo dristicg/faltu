@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   Button,
   SafeAreaView,
@@ -28,8 +28,8 @@ import {
   listenForUnlockEvents,
 } from './src/services/usageTrackingService';
 import { initDatabase, getDailyMetrics } from './src/database/databaseService';
-import { initializeStateFromStorage, registerScreenUnlock, setSocialContextActive } from './src/services/contextEngine';
-import { scanForDevices } from './src/services/bluetoothService';
+import { initializeStateFromStorage, registerScreenUnlock } from './src/services/contextEngine';
+import { checkSocialContext } from './src/services/bluetoothProximityService';
 import { analyzePatterns } from './src/engine/patternAnalyzer';
 import { fetchDailyInsight } from './src/services/llmService';
 import { getCurrentNudgeTier, resetNudgeTier } from './src/engine/nudgeEngine';
@@ -86,6 +86,9 @@ function ScreenManager() {
   const [screen, setScreen] = useState<
     'home' | 'social' | 'drift' | 'reconnect' | 'insights' | 'timeline' | 'settings'
   >('home');
+  const [socialContext, setSocialContext] = useState(false);
+  const socialContextRef = useRef(false);
+  const lastBleCheck = useRef(0);
   const [microChecks, setMicroChecks] = useState(0);
   const [burstEvents, setBurstEvents] = useState(0);
   const [presenceScore, setPresenceScore] = useState(100);
@@ -142,7 +145,6 @@ function ScreenManager() {
 
   useEffect(() => {
     let intervalId: ReturnType<typeof setInterval>;
-    let bleIntervalId: ReturnType<typeof setInterval>;
 
     const startPolling = async () => {
       const hasPermission = await checkUsageAccessPermission();
@@ -152,23 +154,19 @@ function ScreenManager() {
       }
 
       intervalId = setInterval(async () => {
+        if (Date.now() - lastBleCheck.current > 60000) {
+          lastBleCheck.current = Date.now();
+          const bleResult = await checkSocialContext();
+          socialContextRef.current = bleResult.isSocialContext;
+          setSocialContext(bleResult.isSocialContext);
+        }
+
         const events = await getRecentUsageEvents();
         if (events && events.length > 0) {
-          analyzeUsageEvents(events);
+          analyzeUsageEvents(events, socialContextRef.current);
           refreshMetrics();
         }
       }, 5000);
-    };
-
-    const startBlePolling = () => {
-      const runScan = async () => {
-        const deviceCount = await scanForDevices(5000);
-        console.log(`[PresencePulse] BLE Scan Complete: ${deviceCount} devices found.`);
-        setSocialContextActive(deviceCount >= 2);
-      };
-
-      runScan();
-      bleIntervalId = setInterval(runScan, 60000);
     };
 
     const initializeSequence = async () => {
@@ -180,7 +178,6 @@ function ScreenManager() {
       refreshMetrics();
 
       startPolling();
-      startBlePolling();
 
       const unlockSubscription = listenForUnlockEvents((timestamp: number) => {
         registerScreenUnlock(timestamp);
@@ -198,7 +195,6 @@ function ScreenManager() {
 
     return () => {
       if (intervalId) clearInterval(intervalId);
-      if (bleIntervalId) clearInterval(bleIntervalId);
       cleanup();
     };
   }, []);

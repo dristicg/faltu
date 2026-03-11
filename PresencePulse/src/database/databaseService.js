@@ -29,17 +29,23 @@ export const initDatabase = async () => {
         type TEXT,
         socialContext INTEGER DEFAULT 0,
         triggerType TEXT,
-        isPhubbing INTEGER DEFAULT 0
+        isPhubbing INTEGER DEFAULT 0,
+        is_social_context INTEGER DEFAULT 0
       );
     `);
 
-        try {
-            await db.executeSql('ALTER TABLE sessions ADD COLUMN socialContext INTEGER DEFAULT 0');
-            await db.executeSql('ALTER TABLE sessions ADD COLUMN triggerType TEXT');
-            await db.executeSql('ALTER TABLE sessions ADD COLUMN isPhubbing INTEGER DEFAULT 0');
-        } catch (colError) {
-            // Columns already exist
-        }
+        const addColumn = async (sql) => {
+            try {
+                await db.executeSql(sql);
+            } catch (e) {
+                // Column already exists, ignore
+            }
+        };
+
+        await addColumn('ALTER TABLE sessions ADD COLUMN socialContext INTEGER DEFAULT 0');
+        await addColumn('ALTER TABLE sessions ADD COLUMN triggerType TEXT');
+        await addColumn('ALTER TABLE sessions ADD COLUMN isPhubbing INTEGER DEFAULT 0');
+        await addColumn('ALTER TABLE sessions ADD COLUMN is_social_context INTEGER DEFAULT 0');
 
         await db.executeSql(`
       CREATE TABLE IF NOT EXISTS daily_metrics (
@@ -59,12 +65,12 @@ export const initDatabase = async () => {
 export const insertSession = async (session) => {
     if (!db) return;
     try {
-        const { packageName, startTime, endTime, duration, type, socialContext = 0, triggerType = 'unknown', isPhubbing = 0 } = session;
+        const { packageName, startTime, endTime, duration, type, socialContext = 0, is_social_context = 0, triggerType = 'unknown', isPhubbing = 0 } = session;
         await db.executeSql(
-            `INSERT INTO sessions (packageName, startTime, endTime, duration, type, socialContext, triggerType, isPhubbing) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [packageName, startTime, endTime, duration, type, socialContext ? 1 : 0, triggerType, isPhubbing ? 1 : 0]
+            `INSERT INTO sessions (packageName, startTime, endTime, duration, type, socialContext, triggerType, isPhubbing, is_social_context) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [packageName, startTime, endTime, duration, type, socialContext ? 1 : 0, triggerType, isPhubbing ? 1 : 0, is_social_context ? 1 : 0]
         );
-        console.log(`[PresencePulse DB] Inserted session: ${type} for ${packageName}`);
+        console.log(`[PresencePulse DB] Inserted session: ${type} for ${packageName}. Social context flag: ${is_social_context}`);
     } catch (error) {
         console.error('[PresencePulse DB] Insert session error:', error);
     }

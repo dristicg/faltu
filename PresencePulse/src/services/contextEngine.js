@@ -25,13 +25,7 @@ let burstCount = 0;
 let driftSeverity = 'None';
 
 // Phase 3 Additions
-let phubbingEventCount = 0;
-let currentSocialContext = false;
-
-export function setSocialContextActive(isActive) {
-  currentSocialContext = isActive;
-  console.log(`${logPrefix} Social Context set to: ${isActive}`);
-}
+let phubbingBurstCount = 0;
 
 const logPrefix = '[PresencePulse]';
 
@@ -119,7 +113,7 @@ function triggerMetricsUpdate() {
   });
 }
 
-function trackBurst(referenceTime) {
+function trackBurst(referenceTime, socialContext = false) {
   microCheckTimestamps.push(referenceTime);
   microCheckTimestamps = microCheckTimestamps.filter(
     (timestamp) => referenceTime - timestamp <= BURST_WINDOW_MS
@@ -130,7 +124,14 @@ function trackBurst(referenceTime) {
   if (microCheckTimestamps.length >= driftThreshold && !attentionDrift) {
     attentionDrift = true;
     burstCount += 1;
-    console.log('Attention drift detected');
+    console.log('Attention drift detected (Burst)');
+
+    // Step 8: If burstDetected AND socialContext true, triggerPhubEvent
+    if (socialContext) {
+      phubbingBurstCount += 1;
+      console.log(`${logPrefix} Phubbing event triggered from Burst!`);
+    }
+
     triggerMetricsUpdate();
   }
 
@@ -181,13 +182,14 @@ export function getBurstCount() {
 }
 
 export function getPresenceScore() {
-  // Phase 3: Heavy penalties for Phubbing (10 points each) vs Micro-checks (2 points)
-  const score = 100 - (microCheckCount * 2) - (phubbingEventCount * 10);
+  // Step 8: Normal burst = -10 points. Phubbing burst = -15 points.
+  const normalBursts = Math.max(0, burstCount - phubbingBurstCount);
+  const score = 100 - (normalBursts * 10) - (phubbingBurstCount * 15);
   return Math.max(0, Math.floor(score));
 }
 
 export function getScoreCategory() {
-  if (phubbingEventCount > 0 || microCheckCount >= 9) {
+  if (phubbingBurstCount > 0 || burstCount >= 4) {
     return 'Low';
   }
 
@@ -229,7 +231,7 @@ export function getDriftThreshold() {
 
 let lastProcessedTimestamp = 0;
 
-export function analyzeUsageEvents(events) {
+export function analyzeUsageEvents(events, socialContext = false) {
   if (!events || !Array.isArray(events) || events.length === 0) return [];
 
   const sortedEvents = [...events].sort((a, b) => a.timestamp - b.timestamp);
@@ -255,7 +257,7 @@ export function analyzeUsageEvents(events) {
           };
           newSessions.push(sessionRecord);
 
-          processRealSession(sessionRecord);
+          processRealSession(sessionRecord, socialContext);
         }
         delete activeAppSessions[packageName];
       }
@@ -272,18 +274,17 @@ export function analyzeUsageEvents(events) {
   return newSessions;
 }
 
-function processRealSession(session) {
+function processRealSession(session, socialContext) {
   const durationSeconds = session.duration;
   const type = durationSeconds < MICRO_CHECK_THRESHOLD_SECONDS ? 'micro-check' : 'session';
 
   // Phase 3: Identify Triggers
-  // If app opened within 15 seconds of unlock -> Habit. Otherwise -> Intentional
   const timeSinceUnlock = lastUnlockTimestamp ? (session.startTime - lastUnlockTimestamp) : 99999;
   const triggerType = timeSinceUnlock < 15000 ? 'habit' : 'intentional';
 
-  // Phase 3: Social Context and Phubbing
-  const socialContext = currentSocialContext ? 1 : 0;
-  const isPhubbing = (type === 'micro-check' && currentSocialContext) ? 1 : 0;
+  // Step 8: Social Context and Phubbing fields
+  const is_social_context = socialContext ? 1 : 0;
+  const isPhubbing = (type === 'micro-check' && socialContext) ? 1 : 0;
 
   const record = {
     startTime: session.startTime,
@@ -291,22 +292,18 @@ function processRealSession(session) {
     durationSeconds,
     type,
     packageName: session.packageName,
-    socialContext,
+    is_social_context,
     triggerType,
     isPhubbing
   };
 
   sessionHistory.push(record);
-  console.log(`${logPrefix} Real session parsed: ${session.packageName} (${durationSeconds.toFixed(2)}s) - ${type}. Trigger: ${triggerType}. Phubbing: ${Boolean(isPhubbing)}`);
+  console.log(`${logPrefix} Real session parsed: ${session.packageName} (${durationSeconds.toFixed(2)}s) - ${type}. Trigger: ${triggerType}. SocialContext: ${Boolean(is_social_context)}`);
 
   if (type === 'micro-check') {
     microCheckCount += 1;
-    if (isPhubbing) {
-      phubbingEventCount += 1;
-      console.log(`${logPrefix} PHUBBING EVENT DETECTED. Heavy score penalty applied.`);
-    }
     console.log(`${logPrefix} Real Micro-check detected. Count: ${microCheckCount}`);
-    trackBurst(session.endTime);
+    trackBurst(session.endTime, socialContext);
     triggerMetricsUpdate();
 
     // Evaluate for a nudge
