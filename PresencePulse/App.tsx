@@ -7,6 +7,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  ScrollView,
 } from 'react-native';
 import {
   getBurstCount,
@@ -218,7 +219,7 @@ function ScreenManager() {
   const scoreAccentColor = scoreVisual.accent;
 
   const renderHome = () => (
-    <View style={styles.homeWrapper}>
+    <ScrollView contentContainerStyle={styles.homeScrollContent} showsVerticalScrollIndicator={false}>
       <View style={styles.headerRow}>
         <View style={styles.headerBlock}>
           <Text style={styles.appName}>Presence Pulse</Text>
@@ -275,7 +276,7 @@ function ScreenManager() {
       <View style={{ marginTop: 16 }}>
         <Button title="Test Usage Events" onPress={testUsage} />
       </View>
-    </View>
+    </ScrollView>
   );
 
   const renderSocial = () => (
@@ -312,7 +313,7 @@ function ScreenManager() {
   );
 
   const renderReconnect = () => (
-    <View style={styles.centeredBlock}>
+    <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
       <Text style={styles.title}>Reconnect With Intention</Text>
       <Text style={styles.subtitle}>Take 2 minutes to reset your focus.</Text>
       <View style={styles.cardGroup}>
@@ -329,11 +330,11 @@ function ScreenManager() {
       >
         <Text style={styles.primaryButtonText}>Continue to Insights</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 
   const renderInsights = () => (
-    <View style={styles.centeredBlock}>
+    <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
       <Text style={styles.title}>Your Attention Insights</Text>
       <View style={styles.cardGroup}>
         <InsightCard
@@ -375,11 +376,11 @@ function ScreenManager() {
       >
         <Text style={styles.secondaryButtonText}>Back to Home</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 
   const renderTimeline = () => (
-    <View style={styles.centeredBlock}>
+    <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
       <Text style={styles.title}>Attention Timeline</Text>
       <View style={styles.timeline}>
         <TimelineItem time="10:12 AM" event="Micro-check" />
@@ -397,11 +398,11 @@ function ScreenManager() {
       >
         <Text style={styles.secondaryButtonText}>Back to Insights</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 
   const renderSettings = () => (
-    <View style={styles.centeredBlock}>
+    <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
       <Text style={styles.title}>Sensitivity Settings</Text>
       <View style={styles.settingsGroup}>
         <TouchableOpacity
@@ -444,7 +445,7 @@ function ScreenManager() {
       >
         <Text style={styles.secondaryButtonText}>Cancel</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 
   const renderScreen = () => {
@@ -547,6 +548,16 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingVertical: 32,
+    alignItems: 'center',
+  },
+  homeScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'space-between',
+    paddingVertical: 32,
   },
   title: {
     fontSize: 30,

@@ -4,6 +4,8 @@ SQLite.enablePromise(true);
 
 let db = null;
 
+export const getDb = () => db;
+
 export const initDatabase = async () => {
     try {
         db = await SQLite.openDatabase({
@@ -30,6 +32,14 @@ export const initDatabase = async () => {
         isPhubbing INTEGER DEFAULT 0
       );
     `);
+
+        try {
+            await db.executeSql('ALTER TABLE sessions ADD COLUMN socialContext INTEGER DEFAULT 0');
+            await db.executeSql('ALTER TABLE sessions ADD COLUMN triggerType TEXT');
+            await db.executeSql('ALTER TABLE sessions ADD COLUMN isPhubbing INTEGER DEFAULT 0');
+        } catch (colError) {
+            // Columns already exist
+        }
 
         await db.executeSql(`
       CREATE TABLE IF NOT EXISTS daily_metrics (

@@ -1,8 +1,8 @@
 import { getDailyMetrics } from '../database/databaseService';
 import { analyzePatterns } from '../engine/patternAnalyzer';
+const GEMINI_API_KEY = 'AIzaSyB7xU2ou0VBYMwFe0tgozvSm-9gQrRA-DY'; // Provided by user
 
-const GEMINI_API_KEY = 'AIzaSyAawHuSrzzyhxQ_XE4Ujbsadj95Ec49WHM'; // Provided by user
-const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 export const fetchDailyInsight = async () => {
     try {
@@ -38,7 +38,8 @@ export const fetchDailyInsight = async () => {
         });
 
         if (!response.ok) {
-            console.error('[LLMService] HTTP error response:', response.status);
+            const errorText = await response.text();
+            console.error('[LLMService] HTTP error response:', response.status, errorText);
             return "Take a deep breath. Let's focus on being present tomorrow.";
         }
 
