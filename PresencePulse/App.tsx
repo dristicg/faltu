@@ -301,35 +301,6 @@ function ScreenManager() {
           <Text style={styles.appName}>Presence Pulse</Text>
           <Text style={styles.tagline}>Detect. Reflect. Reconnect.</Text>
         </View>
-        <Animated.View style={[styles.presenceCard, { borderColor: scoreAccentColor, opacity: fadeAnim }]}>
-          <Text style={styles.presenceLabel}>Presence Score</Text>
-          <Animated.View style={[styles.scoreCircle, { borderColor: scoreAccentColor, transform: [{ scale: pulseAnim }], shadowColor: scoreAccentColor, elevation: 12 }]}>
-            <Text style={[styles.scoreValue, { color: scoreAccentColor }]}>
-              {presenceScore}%
-            </Text>
-          </Animated.View>
-          <View
-            style={[
-              styles.scoreCategoryTag,
-              {
-                backgroundColor: scoreVisual.surface,
-                borderColor: scoreAccentColor,
-              },
-            ]}
-          >
-            <Text
-              style={[styles.scoreCategoryTagText, { color: scoreAccentColor }]}
-            >
-              {scoreCategory} Focus
-            </Text>
-          </View>
-          <Text style={styles.presenceSubtitle}>Your Current Presence Score</Text>
-        </Animated.View>
-
-        <View style={styles.metricsRow}>
-          <MetricCard label="Micro-checks Today" value={String(microChecks)} />
-          <MetricCard label="Burst Events" value={String(burstEvents)} />
-        </View>
 
         <TouchableOpacity
           style={[styles.zenButton, zenActive && styles.zenButtonActive]}
@@ -347,6 +318,36 @@ function ScreenManager() {
           <Text style={styles.zenBannerText}>🧘 Zen Mode — Tracking paused</Text>
         </View>
       )}
+
+      <Animated.View style={[styles.presenceCard, { borderColor: scoreAccentColor, opacity: fadeAnim, marginTop: 20 }]}>
+        <Text style={styles.presenceLabel}>Presence Score</Text>
+        <Animated.View style={[styles.scoreCircle, { borderColor: scoreAccentColor, transform: [{ scale: pulseAnim }], shadowColor: scoreAccentColor, elevation: 12 }]}>
+          <Text style={[styles.scoreValue, { color: scoreAccentColor }]}>
+            {presenceScore}%
+          </Text>
+        </Animated.View>
+        <View
+          style={[
+            styles.scoreCategoryTag,
+            {
+              backgroundColor: scoreVisual.surface,
+              borderColor: scoreAccentColor,
+            },
+          ]}
+        >
+          <Text
+            style={[styles.scoreCategoryTagText, { color: scoreAccentColor }]}
+          >
+            {scoreCategory} Focus
+          </Text>
+        </View>
+        <Text style={styles.presenceSubtitle}>Your Current Presence Score</Text>
+      </Animated.View>
+
+      <View style={[styles.metricsRow, { marginTop: 24 }]}>
+        <MetricCard label="Micro-checks Today" value={String(microChecks)} />
+        <MetricCard label="Burst Events" value={String(burstEvents)} />
+      </View>
 
       <TouchableOpacity
         style={[styles.primaryButton, styles.homeButton]}
