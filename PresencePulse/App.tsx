@@ -20,6 +20,7 @@ import {
   startSession,
   endSession,
   analyzeUsageEvents,
+  resetBurstState
 } from './src/services/contextEngine';
 import {
   checkUsageAccessPermission,
@@ -27,7 +28,7 @@ import {
   openUsageAccessSettings,
   listenForUnlockEvents,
 } from './src/services/usageTrackingService';
-import { initDatabase, getDailyMetrics, getCachedInsight, saveInsight } from './src/database/databaseService';
+import { initDatabase, getDailyMetrics, getCachedInsight, saveInsight, getVulnerableHour, getTopTriggerApps, getWeeklyScores, getImprovementStreak } from './src/database/databaseService';
 import { initializeStateFromStorage, registerScreenUnlock } from './src/services/contextEngine';
 import { checkSocialContext } from './src/services/bluetoothProximityService';
 import { analyzePatterns } from './src/engine/patternAnalyzer';
@@ -35,6 +36,9 @@ import { fetchDailyInsight } from './src/services/llmService';
 import { generateDailyInsight } from './src/services/aiInsightService';
 import { getCurrentNudgeTier, resetNudgeTier } from './src/engine/nudgeEngine';
 import TimelineScreen from './src/screens/TimelineScreen';
+import ReconnectScreen from './src/screens/ReconnectScreen';
+import ReflectionModal from './src/components/ReflectionModal';
+import WeeklyHeatmap from './src/components/WeeklyHeatmap';
 
 function App() {
   return (
@@ -100,6 +104,10 @@ function ScreenManager() {
   const [topTrigger, setTopTrigger] = useState('Unknown');
   const [vulnerableHour, setVulnerableHour] = useState(-1);
   const [dailyInsight, setDailyInsight] = useState('Fetching your personalized coaching tip...');
+  const [weeklyScores, setWeeklyScores] = useState<any[]>([]);
+  const [triggerApps, setTriggerApps] = useState<any[]>([]);
+  const [improvementStreak, setImprovementStreak] = useState(0);
+  const [vulnerableHourData, setVulnerableHourData] = useState<{hour: number, micro_check_count: number}>({hour: -1, micro_check_count: 0});
 
   const refreshMetrics = () => {
     setMicroChecks(getMicroCheckCount());
@@ -150,6 +158,12 @@ function ScreenManager() {
         setVulnerableHour(result.vulnerableHour);
       });
       loadOrGenerateDailyInsight();
+
+      // Phase 7: Fetch pattern intelligence data
+      getWeeklyScores().then(setWeeklyScores);
+      getVulnerableHour().then(setVulnerableHourData);
+      getTopTriggerApps().then(setTriggerApps);
+      getImprovementStreak().then(setImprovementStreak);
     }
 
     if (screen === 'home' || screen === 'insights') {
@@ -237,64 +251,75 @@ function ScreenManager() {
   const scoreAccentColor = scoreVisual.accent;
 
   const renderHome = () => (
-    <ScrollView contentContainerStyle={styles.homeScrollContent} showsVerticalScrollIndicator={false}>
-      <View style={styles.headerRow}>
-        <View style={styles.headerBlock}>
-          <Text style={styles.appName}>Presence Pulse</Text>
-          <Text style={styles.tagline}>Detect. Reflect. Reconnect.</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.settingsButton}
-          onPress={() => setScreen('settings')}
-        >
-          <Text style={styles.settingsButtonText}>Settings</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={[styles.presenceCard, { borderColor: scoreAccentColor }]}>
-        <Text style={styles.presenceLabel}>Presence Score</Text>
-        <View style={[styles.scoreCircle, { borderColor: scoreAccentColor }]}>
-          <Text style={[styles.scoreValue, { color: scoreAccentColor }]}>
-            {presenceScore}%
-          </Text>
-        </View>
-        <View
-          style={[
-            styles.scoreCategoryTag,
-            {
-              backgroundColor: scoreVisual.surface,
-              borderColor: scoreAccentColor,
-            },
-          ]}
-        >
-          <Text
-            style={[styles.scoreCategoryTagText, { color: scoreAccentColor }]}
+    <>
+      <ScrollView contentContainerStyle={styles.homeScrollContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.headerRow}>
+          <View style={styles.headerBlock}>
+            <Text style={styles.appName}>Presence Pulse</Text>
+            <Text style={styles.tagline}>Detect. Reflect. Reconnect.</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.settingsButton}
+            onPress={() => setScreen('settings')}
           >
-            {scoreCategory} Focus
-          </Text>
+            <Text style={styles.settingsButtonText}>Settings</Text>
+          </TouchableOpacity>
         </View>
-        <Text style={styles.presenceSubtitle}>Your Current Presence Score</Text>
-      </View>
 
-      <View style={styles.metricsRow}>
-        <MetricCard label="Micro-checks Today" value={String(microChecks)} />
-        <MetricCard label="Burst Events" value={String(burstEvents)} />
-      </View>
+        <View style={[styles.presenceCard, { borderColor: scoreAccentColor }]}>
+          <Text style={styles.presenceLabel}>Presence Score</Text>
+          <View style={[styles.scoreCircle, { borderColor: scoreAccentColor }]}>
+            <Text style={[styles.scoreValue, { color: scoreAccentColor }]}>
+              {presenceScore}%
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.scoreCategoryTag,
+              {
+                backgroundColor: scoreVisual.surface,
+                borderColor: scoreAccentColor,
+              },
+            ]}
+          >
+            <Text
+              style={[styles.scoreCategoryTagText, { color: scoreAccentColor }]}
+            >
+              {scoreCategory} Focus
+            </Text>
+          </View>
+          <Text style={styles.presenceSubtitle}>Your Current Presence Score</Text>
+        </View>
 
-      <TouchableOpacity
-        style={[styles.primaryButton, styles.homeButton]}
-        onPress={() => {
-          startSession();
-          setScreen('social');
+        <View style={styles.metricsRow}>
+          <MetricCard label="Micro-checks Today" value={String(microChecks)} />
+          <MetricCard label="Burst Events" value={String(burstEvents)} />
+        </View>
+
+        <TouchableOpacity
+          style={[styles.primaryButton, styles.homeButton]}
+          onPress={() => {
+            startSession();
+            setScreen('social');
+          }}
+        >
+          <Text style={styles.primaryButtonText}>Start Social Mode</Text>
+        </TouchableOpacity>
+
+        <View style={{ marginTop: 16 }}>
+          <Button title="Test Usage Events" onPress={testUsage} />
+        </View>
+      </ScrollView>
+
+      {/* TIER 2 INTERVENTION - Global Reflection Modal */}
+      <ReflectionModal
+        visible={getCurrentNudgeTier() === 2}
+        onClose={() => {
+          resetNudgeTier();
+          refreshMetrics();
         }}
-      >
-        <Text style={styles.primaryButtonText}>Start Social Mode</Text>
-      </TouchableOpacity>
-
-      <View style={{ marginTop: 16 }}>
-        <Button title="Test Usage Events" onPress={testUsage} />
-      </View>
-    </ScrollView>
+      />
+    </>
   );
 
   const renderSocial = () => (
@@ -330,30 +355,36 @@ function ScreenManager() {
     </View>
   );
 
-  const renderReconnect = () => (
-    <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-      <Text style={styles.title}>Reconnect With Intention</Text>
-      <Text style={styles.subtitle}>Take 2 minutes to reset your focus.</Text>
-      <View style={styles.cardGroup}>
-        <SuggestionCard label="Deep Breathing" />
-        <SuggestionCard label="Short Walk" />
-        <SuggestionCard label="Call a Friend" />
-      </View>
-      <TouchableOpacity
-        style={styles.primaryButton}
-        onPress={() => {
-          refreshMetrics();
-          setScreen('insights');
-        }}
-      >
-        <Text style={styles.primaryButtonText}>Continue to Insights</Text>
-      </TouchableOpacity>
-    </ScrollView>
-  );
+  const formatHourLabel = (hour: number): string => {
+    if (hour < 0) return '--';
+    const suffix = hour >= 12 ? 'PM' : 'AM';
+    const h = hour % 12 === 0 ? 12 : hour % 12;
+    return `${h} ${suffix}`;
+  };
+
+  const mapAppDisplayName = (pkg: string): string => {
+    const APP_NAMES: Record<string, string> = {
+      'com.instagram.android': 'Instagram',
+      'com.whatsapp': 'WhatsApp',
+      'com.google.android.youtube': 'YouTube',
+      'com.facebook.katana': 'Facebook',
+      'com.reddit.frontpage': 'Reddit',
+      'com.snapchat.android': 'Snapchat',
+      'com.linkedin.android': 'LinkedIn',
+    };
+    if (APP_NAMES[pkg]) return APP_NAMES[pkg];
+    if (!pkg) return 'Unknown';
+    const parts = pkg.split('.');
+    return parts[parts.length - 1] || pkg;
+  };
 
   const renderInsights = () => (
     <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
       <Text style={styles.title}>Your Attention Insights</Text>
+
+      {/* Phase 7: Weekly Presence Heatmap */}
+      <WeeklyHeatmap scores={weeklyScores} />
+
       <View style={styles.cardGroup}>
         <InsightCard
           label="Micro-checks Today"
@@ -377,6 +408,51 @@ function ScreenManager() {
         />
       </View>
 
+      {/* Phase 7: Pattern Intelligence Cards */}
+      <View style={styles.patternSection}>
+        <View style={styles.patternCard}>
+          <Text style={styles.patternCardIcon}>🕐</Text>
+          <Text style={styles.patternCardLabel}>Most Vulnerable Hour</Text>
+          <Text style={styles.patternCardValue}>
+            {vulnerableHourData.hour >= 0
+              ? formatHourLabel(vulnerableHourData.hour)
+              : 'Not enough data'}
+          </Text>
+          {vulnerableHourData.micro_check_count > 0 && (
+            <Text style={styles.patternCardDetail}>
+              {vulnerableHourData.micro_check_count} micro-checks this week
+            </Text>
+          )}
+        </View>
+
+        <View style={styles.patternCard}>
+          <Text style={styles.patternCardIcon}>📱</Text>
+          <Text style={styles.patternCardLabel}>Top Trigger Apps</Text>
+          {triggerApps.length > 0 ? (
+            triggerApps.map((app, idx) => (
+              <Text key={idx} style={styles.patternAppItem}>
+                {idx + 1}. {mapAppDisplayName(app.package_name)}
+              </Text>
+            ))
+          ) : (
+            <Text style={styles.patternCardValue}>No triggers yet</Text>
+          )}
+        </View>
+
+        <View style={styles.patternCard}>
+          <Text style={styles.patternCardIcon}>🔥</Text>
+          <Text style={styles.patternCardLabel}>Improvement Streak</Text>
+          <Text style={styles.patternCardValue}>
+            {improvementStreak > 0
+              ? `${improvementStreak} day${improvementStreak !== 1 ? 's' : ''}`
+              : 'Start today!'}
+          </Text>
+          {improvementStreak > 0 && (
+            <Text style={styles.patternCardDetail}>Consecutive days ≥ 70 score</Text>
+          )}
+        </View>
+      </View>
+
       <View style={styles.insightBox}>
         <Text style={styles.insightBoxLabel}>✨ AI COACHING INSIGHT</Text>
         <Text style={styles.insightBoxText}>{dailyInsight}</Text>
@@ -387,6 +463,9 @@ function ScreenManager() {
         onPress={() => setScreen('timeline')}
       >
         <Text style={styles.primaryButtonText}>View Attention Timeline</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.testButton} onPress={testUsage}>
+        <Text style={styles.testButtonText}>Test Data Pull</Text>
       </TouchableOpacity>
       <TouchableOpacity
         style={styles.secondaryButton}
@@ -400,7 +479,7 @@ function ScreenManager() {
   const renderTimeline = () => (
     <TimelineScreen onBack={() => {
       refreshMetrics();
-      setScreen('home'); // Explicitly back to home as requested
+      setScreen('home');
     }} />
   );
 
@@ -451,6 +530,23 @@ function ScreenManager() {
     </ScrollView>
   );
 
+  const renderReconnect = () => (
+    <ReconnectScreen
+      burstCount={getBurstCount()}
+      onComplete={() => {
+        resetNudgeTier();
+        resetBurstState();
+        refreshMetrics();
+        setScreen('home');
+      }}
+      onSkip={() => {
+        resetNudgeTier();
+        refreshMetrics();
+        setScreen('home');
+      }}
+    />
+  );
+
   const renderScreen = () => {
     switch (screen) {
       case 'social':
@@ -471,7 +567,45 @@ function ScreenManager() {
     }
   };
 
-  return <SafeAreaView style={styles.container}>{renderScreen()}</SafeAreaView>;
+  const showBottomNav = !['social', 'drift', 'reconnect'].includes(screen);
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.screenContent}>{renderScreen()}</View>
+      {showBottomNav && (
+        <View style={styles.bottomNav}>
+          <TouchableOpacity
+            style={[styles.navTab, screen === 'home' && styles.navTabActive]}
+            onPress={() => setScreen('home')}
+          >
+            <Text style={[styles.navTabIcon, screen === 'home' && styles.navTabIconActive]}>🏠</Text>
+            <Text style={[styles.navTabLabel, screen === 'home' && styles.navTabLabelActive]}>Home</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.navTab, screen === 'insights' && styles.navTabActive]}
+            onPress={() => setScreen('insights')}
+          >
+            <Text style={[styles.navTabIcon, screen === 'insights' && styles.navTabIconActive]}>📊</Text>
+            <Text style={[styles.navTabLabel, screen === 'insights' && styles.navTabLabelActive]}>Insights</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.navTab, screen === 'timeline' && styles.navTabActive]}
+            onPress={() => setScreen('timeline')}
+          >
+            <Text style={[styles.navTabIcon, screen === 'timeline' && styles.navTabIconActive]}>📅</Text>
+            <Text style={[styles.navTabLabel, screen === 'timeline' && styles.navTabLabelActive]}>Timeline</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.navTab, screen === 'settings' && styles.navTabActive]}
+            onPress={() => setScreen('settings')}
+          >
+            <Text style={[styles.navTabIcon, screen === 'settings' && styles.navTabIconActive]}>⚙️</Text>
+            <Text style={[styles.navTabLabel, screen === 'settings' && styles.navTabLabelActive]}>Settings</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </SafeAreaView>
+  );
 }
 
 function InsightCard({
@@ -526,6 +660,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0F172A',
+  },
+  screenContent: {
+    flex: 1,
     paddingHorizontal: 24,
   },
   centeredBlock: {
@@ -830,6 +967,89 @@ const styles = StyleSheet.create({
   },
   homeButton: {
     marginTop: 24,
+  },
+  testButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    marginTop: 8,
+  },
+  testButtonText: {
+    color: '#64748B',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  bottomNav: {
+    flexDirection: 'row',
+    backgroundColor: '#1E293B',
+    borderTopWidth: 1,
+    borderTopColor: '#2F3B53',
+    paddingBottom: 4,
+    paddingTop: 8,
+  },
+  navTab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  navTabActive: {
+    borderTopWidth: 2,
+    borderTopColor: '#3B82F6',
+  },
+  navTabIcon: {
+    fontSize: 18,
+    marginBottom: 2,
+  },
+  navTabIconActive: {
+    opacity: 1,
+  },
+  navTabLabel: {
+    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+  navTabLabelActive: {
+    color: '#60A5FA',
+  },
+  patternSection: {
+    width: '100%',
+    gap: 16,
+    marginBottom: 24,
+  },
+  patternCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#2F3B53',
+  },
+  patternCardIcon: {
+    fontSize: 22,
+    marginBottom: 6,
+  },
+  patternCardLabel: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  patternCardValue: {
+    color: '#F1F5F9',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  patternCardDetail: {
+    color: '#64748B',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  patternAppItem: {
+    color: '#E2E8F0',
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 4,
   },
 });
 

@@ -65,6 +65,25 @@ export const initDatabase = async () => {
       );
     `);
 
+        await db.executeSql(`
+      CREATE TABLE IF NOT EXISTS nudges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT,
+        timestamp INTEGER,
+        dismissed INTEGER DEFAULT 0,
+        engaged INTEGER DEFAULT 0
+      );
+    `);
+
+        await db.executeSql(`
+      CREATE TABLE IF NOT EXISTS reflections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp INTEGER,
+        trigger_type TEXT,
+        session_id TEXT
+      );
+    `);
+
         console.log('[PresencePulse DB] Tables verified/created');
     } catch (error) {
         console.error('[PresencePulse DB] Initialization error:', error);
@@ -240,5 +259,174 @@ export const getSessionsForDate = async (dateStr) => {
     } catch (error) {
         console.error('[PresencePulse DB] Get sessions for date error:', error);
         return [];
+    }
+};
+
+export const saveNudge = async (type, dismissed = false) => {
+    if (!db) return;
+    try {
+        await db.executeSql(
+            `INSERT INTO nudges (type, timestamp, dismissed, engaged) VALUES (?, ?, ?, ?)`,
+            [type, Date.now(), dismissed ? 1 : 0, 0]
+        );
+        console.log(`[PresencePulse DB] Saved ${type} nudge`);
+    } catch (error) {
+        console.error('[PresencePulse DB] Save nudge error:', error);
+    }
+};
+
+export const getNudgeLog = async (limit = 10) => {
+    if (!db) return [];
+    try {
+        const [results] = await db.executeSql(
+            'SELECT * FROM nudges ORDER BY timestamp DESC LIMIT ?',
+            [limit]
+        );
+        const nudges = [];
+        for (let i = 0; i < results.rows.length; i++) {
+            nudges.push(results.rows.item(i));
+        }
+        return nudges;
+    } catch (error) {
+        console.error('[PresencePulse DB] Get nudge log error:', error);
+        return [];
+    }
+};
+
+export const markNudgeDismissed = async () => {
+    if (!db) return;
+    try {
+        await db.executeSql(
+            'UPDATE nudges SET dismissed = 1 WHERE id = (SELECT id FROM nudges ORDER BY timestamp DESC LIMIT 1)'
+        );
+        console.log(`[PresencePulse DB] Nudge marked as dismissed`);
+    } catch (error) {
+        console.error('[PresencePulse DB] Mark nudge dismissed error:', error);
+    }
+};
+
+export const markNudgeEngaged = async () => {
+    if (!db) return;
+    try {
+        await db.executeSql(
+            'UPDATE nudges SET engaged = 1 WHERE id = (SELECT id FROM nudges ORDER BY timestamp DESC LIMIT 1)'
+        );
+        console.log(`[PresencePulse DB] Nudge marked as engaged`);
+    } catch (error) {
+        console.error('[PresencePulse DB] Mark nudge engaged error:', error);
+    }
+};
+
+export const saveReflection = async (triggerType, sessionId = null) => {
+    if (!db) return;
+    try {
+        await db.executeSql(
+            `INSERT INTO reflections (timestamp, trigger_type, session_id) VALUES (?, ?, ?)`,
+            [Date.now(), triggerType, sessionId]
+        );
+        console.log(`[PresencePulse DB] Saved user reflection: ${triggerType}`);
+    } catch (error) {
+        console.error('[PresencePulse DB] Save reflection error:', error);
+    }
+};
+
+// ─── Phase 7: Behavioral Pattern Intelligence Queries ─────────────────
+
+export const getVulnerableHour = async (daysBack = 7) => {
+    if (!db) return { hour: -1, micro_check_count: 0 };
+    try {
+        const cutoff = Date.now() - daysBack * 24 * 60 * 60 * 1000;
+        const [results] = await db.executeSql(
+            `SELECT CAST(strftime('%H', startTime / 1000, 'unixepoch', 'localtime') AS INTEGER) AS hour,
+                    COUNT(*) AS micro_check_count
+             FROM sessions
+             WHERE type = 'micro-check' AND startTime >= ?
+             GROUP BY hour
+             ORDER BY micro_check_count DESC
+             LIMIT 1`,
+            [cutoff]
+        );
+        if (results.rows.length > 0) {
+            const row = results.rows.item(0);
+            return { hour: row.hour, micro_check_count: row.micro_check_count };
+        }
+        return { hour: -1, micro_check_count: 0 };
+    } catch (error) {
+        console.error('[PresencePulse DB] getVulnerableHour error:', error);
+        return { hour: -1, micro_check_count: 0 };
+    }
+};
+
+export const getTopTriggerApps = async (daysBack = 7) => {
+    if (!db) return [];
+    try {
+        const cutoff = Date.now() - daysBack * 24 * 60 * 60 * 1000;
+        const [results] = await db.executeSql(
+            `SELECT packageName AS package_name,
+                    COUNT(*) AS micro_check_count,
+                    AVG(duration) AS avg_duration_ms
+             FROM sessions
+             WHERE type = 'micro-check' AND startTime >= ?
+             GROUP BY packageName
+             ORDER BY micro_check_count DESC
+             LIMIT 3`,
+            [cutoff]
+        );
+        const apps = [];
+        for (let i = 0; i < results.rows.length; i++) {
+            apps.push(results.rows.item(i));
+        }
+        return apps;
+    } catch (error) {
+        console.error('[PresencePulse DB] getTopTriggerApps error:', error);
+        return [];
+    }
+};
+
+export const getWeeklyScores = async () => {
+    if (!db) return [];
+    try {
+        const [results] = await db.executeSql(
+            `SELECT date,
+                    presenceScore AS presence_score,
+                    microChecks AS micro_check_count,
+                    burstEvents AS burst_count
+             FROM daily_metrics
+             ORDER BY date DESC
+             LIMIT 7`
+        );
+        const scores = [];
+        for (let i = 0; i < results.rows.length; i++) {
+            scores.push(results.rows.item(i));
+        }
+        // Return in ascending date order
+        return scores.reverse();
+    } catch (error) {
+        console.error('[PresencePulse DB] getWeeklyScores error:', error);
+        return [];
+    }
+};
+
+export const getImprovementStreak = async () => {
+    if (!db) return 0;
+    try {
+        const [results] = await db.executeSql(
+            `SELECT date, presenceScore
+             FROM daily_metrics
+             ORDER BY date DESC
+             LIMIT 30`
+        );
+        let streak = 0;
+        for (let i = 0; i < results.rows.length; i++) {
+            if (results.rows.item(i).presenceScore >= 70) {
+                streak++;
+            } else {
+                break;
+            }
+        }
+        return streak;
+    } catch (error) {
+        console.error('[PresencePulse DB] getImprovementStreak error:', error);
+        return 0;
     }
 };

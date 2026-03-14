@@ -9,6 +9,7 @@ Implement everything cleanly below this comment.
 */
 
 import { insertSession, updateDailyMetrics } from '../database/databaseService';
+import { triggerHapticNudge, shouldShowReflectionPrompt } from './nudgeEngine';
 
 const MICRO_CHECK_THRESHOLD_SECONDS = 20;
 const BURST_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
@@ -113,7 +114,13 @@ function triggerMetricsUpdate() {
   });
 }
 
-function trackBurst(referenceTime, socialContext = false) {
+// Expose state mutators for UI to grab intervention status
+let currentNudgeTier = 0; // 0=none, 1=haptic, 2=reflection, 3=reconnect
+
+export const getCurrentNudgeTier = () => currentNudgeTier;
+export const resetNudgeTier = () => { currentNudgeTier = 0; };
+
+function trackBurst(referenceTime, socialContextFlag = false) {
   microCheckTimestamps.push(referenceTime);
   microCheckTimestamps = microCheckTimestamps.filter(
     (timestamp) => referenceTime - timestamp <= BURST_WINDOW_MS
@@ -126,10 +133,31 @@ function trackBurst(referenceTime, socialContext = false) {
     burstCount += 1;
     console.log('Attention drift detected (Burst)');
 
-    // Step 8: If burstDetected AND socialContext true, triggerPhubEvent
-    if (socialContext) {
+    let shouldHaptic = false;
+    if (socialContextFlag) {
       phubbingBurstCount += 1;
       console.log(`${logPrefix} Phubbing event triggered from Burst!`);
+      shouldHaptic = true;
+    } else {
+      console.log(`${logPrefix} Normal Burst Detected! Micro-checks: ${microCheckTimestamps.length}`);
+      shouldHaptic = true;
+    }
+
+    // Fire Phase 6 Nudges asynchronously
+    if (shouldHaptic) {
+      triggerHapticNudge().then(fired => {
+        if (fired) currentNudgeTier = Math.max(currentNudgeTier, 1);
+      });
+    }
+
+    // Check if we should escalate based on repeated bursts
+    shouldShowReflectionPrompt(microCheckTimestamps.length).then(shouldReflect => {
+      if (shouldReflect) currentNudgeTier = Math.max(currentNudgeTier, 2);
+    });
+
+    // Escalate to Reconnect Block if excessive
+    if (burstCount >= 5 || phubbingBurstCount >= 3) {
+      currentNudgeTier = 3;
     }
 
     triggerMetricsUpdate();
@@ -167,6 +195,15 @@ export function resetDrift() {
   attentionDrift = false;
   microCheckTimestamps = [];
   console.log(`${logPrefix} Attention drift state reset.`);
+}
+
+export function resetBurstState() {
+  burstCount = 0;
+  phubbingBurstCount = 0;
+  attentionDrift = false;
+  microCheckTimestamps = [];
+  console.log(`${logPrefix} Burst counts reset after Reconnect intervention.`);
+  triggerMetricsUpdate();
 }
 
 export function getSessionHistory() {
@@ -249,15 +286,16 @@ export function analyzeUsageEvents(events, socialContext = false) {
         if (timestamp > lastProcessedTimestamp) {
           const durationSeconds = (timestamp - startTime) / 1000;
 
-          const sessionRecord = {
-            packageName,
-            startTime,
-            endTime: timestamp,
-            duration: durationSeconds
-          };
-          newSessions.push(sessionRecord);
-
-          processRealSession(sessionRecord, socialContext);
+          if (durationSeconds >= 0.1) {
+            const sessionRecord = {
+              packageName,
+              startTime,
+              endTime: timestamp,
+              duration: durationSeconds
+            };
+            newSessions.push(sessionRecord);
+            processRealSession(sessionRecord, socialContext);
+          }
         }
         delete activeAppSessions[packageName];
       }
@@ -305,10 +343,6 @@ function processRealSession(session, socialContext) {
     console.log(`${logPrefix} Real Micro-check detected. Count: ${microCheckCount}`);
     trackBurst(session.endTime, socialContext);
     triggerMetricsUpdate();
-
-    // Evaluate for a nudge
-    const { evaluateAndNudge } = require('../engine/nudgeEngine');
-    evaluateAndNudge(Boolean(isPhubbing));
   } else {
     updateDriftSeverity();
   }
