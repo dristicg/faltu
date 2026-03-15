@@ -78,8 +78,8 @@ const InsightsScreen = ({
         />
         <InsightCard
           label="Top Phubbing Trigger"
-          value={topTrigger !== 'Unknown' ? topTrigger : '--'}
-          detail={vulnerableHour !== -1 ? `Peak at ${vulnerableHour}:00` : ''}
+          value={triggerApps && triggerApps.length > 0 ? mapAppDisplayName(triggerApps[0].package_name) : '--'}
+          detail={vulnerableHourData && vulnerableHourData.hour !== -1 ? `Peak at ${formatHourLabel(vulnerableHourData.hour)}` : ''}
         />
         <InsightCard
           label="Rule Win Rate"

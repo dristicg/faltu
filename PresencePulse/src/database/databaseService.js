@@ -31,7 +31,9 @@ export const initDatabase = async () => {
         socialContext INTEGER DEFAULT 0,
         triggerType TEXT,
         isPhubbing INTEGER DEFAULT 0,
-        is_social_context INTEGER DEFAULT 0
+        is_social_context INTEGER DEFAULT 0,
+        category TEXT DEFAULT 'unknown',
+        UNIQUE(packageName, startTime, endTime) ON CONFLICT IGNORE
       );
     `);
 
@@ -55,6 +57,7 @@ export const initDatabase = async () => {
         microChecks INTEGER,
         burstEvents INTEGER,
         phubbing_event_count INTEGER DEFAULT 0,
+        phubbing_micro_checks INTEGER DEFAULT 0,
         social_context_minutes INTEGER DEFAULT 0,
         presenceScore INTEGER,
         checkin_done INTEGER DEFAULT 0,
@@ -63,6 +66,7 @@ export const initDatabase = async () => {
     `);
 
         await addColumn('ALTER TABLE daily_metrics ADD COLUMN phubbing_event_count INTEGER DEFAULT 0');
+        await addColumn('ALTER TABLE daily_metrics ADD COLUMN phubbing_micro_checks INTEGER DEFAULT 0');
         await addColumn('ALTER TABLE daily_metrics ADD COLUMN social_context_minutes INTEGER DEFAULT 0');
         await addColumn('ALTER TABLE daily_metrics ADD COLUMN checkin_done INTEGER DEFAULT 0');
         await addColumn('ALTER TABLE daily_metrics ADD COLUMN checkin_response TEXT');
@@ -105,9 +109,28 @@ export const initDatabase = async () => {
       );
     `);
 
+        await cleanDuplicateSessions(); // NEW: remove existing duplicates
         console.log('[PresencePulse DB] Tables verified/created');
     } catch (error) {
         console.error('[PresencePulse DB] Initialization error:', error);
+    }
+};
+
+export const cleanDuplicateSessions = async () => {
+    if (!db) return;
+    try {
+        // Find and delete duplicates keeping only the one with the lowest ID
+        await db.executeSql(`
+            DELETE FROM sessions 
+            WHERE id NOT IN (
+                SELECT MIN(id) 
+                FROM sessions 
+                GROUP BY packageName, startTime, endTime
+            )
+        `);
+        console.log('[PresencePulse DB] Duplicates cleaned');
+    } catch (e) {
+        console.warn('[PresencePulse DB] Duplicate cleanup failed:', e);
     }
 };
 
@@ -174,14 +197,14 @@ export const updateDailyMetrics = async (metrics) => {
         return;
     }
     try {
-        const { microChecks, burstEvents, presenceScore, phubbing_event_count = 0, social_context_minutes = 0 } = metrics;
+        const { microChecks, burstEvents, presenceScore, phubbing_event_count = 0, phubbing_micro_checks = 0, social_context_minutes = 0 } = metrics;
 
         // Get current local date in YYYY-MM-DD
         const date = new Date().toISOString().split('T')[0];
 
         await db.executeSql(
-            `INSERT OR REPLACE INTO daily_metrics (date, microChecks, burstEvents, phubbing_event_count, social_context_minutes, presenceScore) VALUES (?, ?, ?, ?, ?, ?)`,
-            [date, microChecks, burstEvents, phubbing_event_count, social_context_minutes, presenceScore]
+            `INSERT OR REPLACE INTO daily_metrics (date, microChecks, burstEvents, phubbing_event_count, phubbing_micro_checks, social_context_minutes, presenceScore) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [date, microChecks, burstEvents, phubbing_event_count, phubbing_micro_checks, social_context_minutes, presenceScore]
         );
         console.log(`[PresencePulse DB] Updated metrics for ${date}: MC=${microChecks}, Burst=${burstEvents}, Phubbing=${phubbing_event_count}, Score=${presenceScore}`);
     } catch (error) {
@@ -216,6 +239,53 @@ export const getDailyMetrics = async () => {
     } catch (error) {
         console.error('[PresencePulse DB] Get daily metrics error:', error);
         return null;
+    }
+};
+
+export const recalculateTodayMetrics = async () => {
+    if (!db) return { microChecks: 0, burstEvents: 0, phubbing_micro_checks: 0 };
+    try {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const startOfDayMs = startOfDay.getTime();
+
+        const [mcResults] = await db.executeSql(
+            "SELECT COUNT(*) as count FROM sessions WHERE type = 'micro-check' AND startTime >= ?",
+            [startOfDayMs]
+        );
+        const [phResults] = await db.executeSql(
+            "SELECT COUNT(*) as count FROM sessions WHERE isPhubbing = 1 AND startTime >= ?",
+            [startOfDayMs]
+        );
+        // Note: Bursts are harder to calculate from SQL without the sliding window logic,
+        // so we'll trust the latest daily_metrics for bursts or default to 0 and let it rebuild.
+        const [burstResults] = await db.executeSql(
+            "SELECT burstEvents FROM daily_metrics WHERE date = ?",
+            [new Date().toISOString().split('T')[0]]
+        );
+
+        return {
+            microChecks: mcResults.rows.item(0).count || 0,
+            phubbing_micro_checks: phResults.rows.item(0).count || 0,
+            burstEvents: (burstResults.rows.length > 0) ? burstResults.rows.item(0).burstEvents : 0
+        };
+    } catch (error) {
+        console.error('[PresencePulse DB] Recalculate metrics error:', error);
+        return { microChecks: 0, burstEvents: 0, phubbing_micro_checks: 0 };
+    }
+}
+
+export const getLastSessionTimestamp = async () => {
+    if (!db) return 0;
+    try {
+        const [results] = await db.executeSql('SELECT endTime FROM sessions ORDER BY endTime DESC LIMIT 1');
+        if (results.rows.length > 0) {
+            return results.rows.item(0).endTime;
+        }
+        return 0;
+    } catch (error) {
+        console.error('[PresencePulse DB] Get last session timestamp error:', error);
+        return 0;
     }
 };
 

@@ -22,7 +22,8 @@ import {
   startSession,
   endSession,
   analyzeUsageEvents,
-  resetBurstState
+  resetBurstState,
+  getWinRate5s
 } from './src/services/contextEngine';
 import {
   checkUsageAccessPermission,
@@ -30,7 +31,7 @@ import {
   openUsageAccessSettings,
   listenForUnlockEvents,
 } from './src/services/usageTrackingService';
-import { initDatabase, getDailyMetrics, getCachedInsight, saveInsight, getVulnerableHour, getTopTriggerApps, getWeeklyScores, getImprovementStreak, getHourlyHeatStats, getReflectionBreakdown, getFiveSecondStats, getWholeWeeklyMetrics } from './src/database/databaseService';
+import { initDatabase, getDailyMetrics, getCachedInsight, saveInsight, getVulnerableHour, getTopTriggerApps, getWeeklyScores, getImprovementStreak, getHourlyHeatStats, getReflectionBreakdown, getFiveSecondStats, getWholeWeeklyMetrics, getLastSessionTimestamp, recalculateTodayMetrics } from './src/database/databaseService';
 import { initializeStateFromStorage, registerScreenUnlock } from './src/services/contextEngine';
 import { checkSocialContext } from './src/services/bluetoothProximityService';
 import { analyzePatterns } from './src/engine/patternAnalyzer';
@@ -168,6 +169,7 @@ function ScreenManager() {
       resetNudgeTier();
     }
     setPresenceDebt(getPresenceDebt());
+    setFiveSecondStats((prev: any) => ({ ...prev, rate: getWinRate5s() }));
   };
 
   const loadOrGenerateDailyInsight = async () => {
@@ -273,11 +275,16 @@ function ScreenManager() {
 
       // Phase 2: Restore behavioral status from SQLite
       const todayMetrics = await getDailyMetrics();
+      const lastTimestamp = await getLastSessionTimestamp();
+      
+      // USP: Recalculate true counts from sessions (De-corruption)
+      const verifiedMetrics = await recalculateTodayMetrics();
+      
       if (todayMetrics) {
         setCheckInDone(!!todayMetrics.checkin_done);
         setCheckInResponse(todayMetrics.checkin_response || '');
       }
-      initializeStateFromStorage(todayMetrics);
+      initializeStateFromStorage(verifiedMetrics, lastTimestamp);
       refreshMetrics();
 
       startPolling();

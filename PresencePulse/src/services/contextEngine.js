@@ -30,18 +30,29 @@ let driftSeverity = 'None';
 // Phase 3 & 8 Additions
 let phubbingBurstCount = 0;
 let dailyPhubbingEvents = 0;
+let phubbingMicroChecks = 0; // NEW: track individual phubbing events
 let phubbingPenaltyWeight = 1.0; 
 let presenceDebt = 0;
+let winCount5s = 0; // NEW: track 5s rule wins locally
+let lossCount5s = 0; // NEW: track 5s rule losses locally
 
 const logPrefix = '[PresencePulse]';
 
-export function initializeStateFromStorage(metrics) {
+export function initializeStateFromStorage(metrics, lastTimestamp = 0) {
   if (metrics) {
     microCheckCount = metrics.microChecks || 0;
     burstCount = metrics.burstEvents || 0;
     dailyPhubbingEvents = metrics.phubbing_event_count || 0;
-    console.log(`${logPrefix} State restored from storage: MC=${microCheckCount}, Burst=${burstCount}, Phubbing=${dailyPhubbingEvents}`);
+    phubbingMicroChecks = metrics.phubbing_micro_checks || 0;
+    console.log(`${logPrefix} State verified from Sessions: MC=${microCheckCount}, Burst=${burstCount}, PhubbingMC=${phubbingMicroChecks}`);
   }
+  if (lastTimestamp > 0) {
+    lastProcessedTimestamp = lastTimestamp;
+    console.log(`${logPrefix} Event processing resumed from: ${new Date(lastTimestamp).toLocaleString()}`);
+  }
+  
+  // Sync verified state back to daily_metrics immediately
+  triggerMetricsUpdate();
 }
 
 export let lastUnlockTimestamp = null;
@@ -125,6 +136,7 @@ function triggerMetricsUpdate() {
     microChecks: microCheckCount,
     burstEvents: burstCount,
     phubbing_event_count: dailyPhubbingEvents,
+    phubbing_micro_checks: phubbingMicroChecks,
     presenceScore: getPresenceScore()
   });
 }
@@ -235,10 +247,16 @@ export function getBurstCount() {
 }
 
 export function getPresenceScore() {
-  // Context-aware scoring: weighted phubbing penalty
+  // Context-aware scoring: 
+  // - 1% deduction per distraction micro-check (individual)
+  // - 5% deduction per burst (macro behavior)
+  // - 15% deduction per phubbing burst (social friction)
+  
   const normalBursts = Math.max(0, burstCount - phubbingBurstCount);
   const weightedPhubbingCost = Math.round(phubbingBurstCount * 15 * phubbingPenaltyWeight);
-  const score = 100 - (normalBursts * 10) - weightedPhubbingCost;
+  const microCheckCost = microCheckCount * 1; // Reduced to 1% for balance
+  
+  const score = 100 - (normalBursts * 5) - weightedPhubbingCost - microCheckCost;
   return Math.max(0, Math.floor(score));
 }
 
@@ -354,12 +372,14 @@ function checkFiveSecondRule(sessionStartTime, packageName, socialContext) {
                 app_opened: packageName,
                 is_social_context: socialContext ? 1 : 0
             });
+            lossCount5s++;
         }
-    } else if (timeDelta >= 5000 && timeDelta < 15000) {
-        // If the first app opened after unlock was NOT a distraction app, and it was after 5s
-        // This logic is slightly flawed in a polling loop, but we can approximate "Wins"
-        // by checking if the FIRST app opened after unlock was > 5s.
-        // For simplicity in a hackathon, we'll track "LOSSES" accurately.
+    } else {
+        // Simple heuristic: if we accessed an app after 5s and it's the first one after unlock
+        // but for real-time win rate, we'll increment if the delta is safe
+        if (timeDelta >= 5000 && !DISTRACTION_APPS.includes(packageName)) {
+           winCount5s++;
+        }
     }
 }
 
@@ -386,6 +406,11 @@ function processRealSession(session, socialContext, hasWhitelistedDevice = true)
   // Step 8: Social Context and Phubbing fields
   const is_social_context = socialContext ? 1 : 0;
   const isPhubbing = (type === 'micro-check' && socialContext) ? 1 : 0;
+
+  if (isPhubbing) {
+    phubbingMicroChecks += 1;
+    dailyPhubbingEvents += 1; // For daily metrics table
+  }
 
   // Refined social context: reduce phubbing penalty in public spaces
   if (socialContext && !hasWhitelistedDevice) {
@@ -442,7 +467,7 @@ export function calculatePresenceDebt(weeklyMetrics) {
     weeklyMetrics.forEach(day => {
         if (day.date === todayStr) return; // We handle today separately for real-time
         
-        const phubbingEvents = day.phubbing_event_count || 0;
+        const phubbingEvents = day.phubbing_events || day.phubbing_event_count || 0;
         debt += phubbingEvents * 10;
         if (phubbingEvents === 0 && (day.presenceScore || 0) >= 75) {
             debt = Math.max(0, debt - 15);
@@ -457,6 +482,11 @@ let presenceDebtBaseline = 0;
 
 export function getPresenceDebt() {
     // Real-time debt: Baseline from past days + Current day's phubbing events
-    return presenceDebtBaseline + (dailyPhubbingEvents * 10);
+    return presenceDebtBaseline + (phubbingMicroChecks * 10);
+}
+
+export function getWinRate5s() {
+    const total = winCount5s + lossCount5s;
+    return total > 0 ? Math.round((winCount5s / total) * 100) : 0;
 }
 
