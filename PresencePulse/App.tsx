@@ -369,7 +369,7 @@ function ScreenManager() {
         
         {/* Presence Debt Indicator */}
         <View style={styles.debtContainer}>
-            <Text style={[styles.debtLabel, { color: presenceDebt > 30 ? '#FF3366' : '#A1A1AA' }]}>
+            <Text style={[styles.debtLabel, { color: presenceDebt > 70 ? '#EF4444' : presenceDebt > 30 ? '#F59E0B' : presenceDebt > 0 ? '#FBBF24' : '#10B981' }]}>
                 Presence Debt: <Text style={styles.debtValue}>{presenceDebt}</Text>
             </Text>
             <Text style={styles.debtStatus}>
@@ -460,9 +460,19 @@ function ScreenManager() {
       weeklyScores={weeklyScores}
       microChecks={microChecks}
       burstEvents={burstEvents}
+      presenceScore={presenceScore}
+      scoreCategory={scoreCategory}
+      scoreAccentColor={resolveScoreVisual(scoreCategory).accent}
+      topTrigger={topTrigger}
+      vulnerableHour={vulnerableHour}
       triggerApps={triggerApps}
       improvementStreak={improvementStreak}
       vulnerableHourData={vulnerableHourData}
+      dailyInsight={dailyInsight}
+      blueprint={blueprint}
+      heatMap={heatMap}
+      reflectionBreakdown={reflectionBreakdown}
+      fiveSecondStats={fiveSecondStats}
       checkInDone={checkInDone}
       checkInResponse={checkInResponse}
       onCheckInComplete={(response: string) => {
@@ -471,6 +481,8 @@ function ScreenManager() {
           setCheckInDone(true);
           setCheckInResponse(response);
       }}
+      onTimelinePress={() => setScreen('timeline')}
+      onTestUsage={testUsage}
     />
   );
 
@@ -1127,22 +1139,33 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   debtContainer: {
-    marginTop: 12,
+    marginTop: 20,
     alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   debtLabel: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+    textTransform: 'uppercase',
   },
   debtValue: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '900',
+    color: '#FFFFFF',
   },
   debtStatus: {
-    fontSize: 12,
-    color: '#71717A',
+    fontSize: 13,
+    color: '#D4D4D8',
     marginTop: 2,
     fontWeight: '600',
+    textAlign: 'center',
   },
 });
 

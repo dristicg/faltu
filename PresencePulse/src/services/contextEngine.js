@@ -434,21 +434,29 @@ function processRealSession(session, socialContext, hasWhitelistedDevice = true)
 
 // USP 3: Presence Debt Score Calculation
 export function calculatePresenceDebt(weeklyMetrics) {
-    // Each phubbing event adds 10 debt points.
-    // Days with high presence score (>=75) and zero phubbing events reduce debt by 15.
+    // weeklyMetrics: array of { date, phubbing_event_count, presenceScore }
     let debt = 0;
-    const sorted = [...weeklyMetrics].sort((a,b) => a.date.localeCompare(b.date));
+    // We filter out today's metrics from the baseline if it exists in the array
+    const todayStr = new Date().toISOString().split('T')[0];
     
-    sorted.forEach(day => {
-        const phubbingEvents = day.phubbing_events || 0;
+    weeklyMetrics.forEach(day => {
+        if (day.date === todayStr) return; // We handle today separately for real-time
+        
+        const phubbingEvents = day.phubbing_event_count || 0;
         debt += phubbingEvents * 10;
-        if (phubbingEvents === 0 && (day.presence_score || 0) >= 75) {
+        if (phubbingEvents === 0 && (day.presenceScore || 0) >= 75) {
             debt = Math.max(0, debt - 15);
         }
     });
-    presenceDebt = debt;
-    return debt;
+    
+    presenceDebtBaseline = debt;
+    return getPresenceDebt();
 }
 
-export const getPresenceDebt = () => presenceDebt;
+let presenceDebtBaseline = 0;
+
+export function getPresenceDebt() {
+    // Real-time debt: Baseline from past days + Current day's phubbing events
+    return presenceDebtBaseline + (dailyPhubbingEvents * 10);
+}
 

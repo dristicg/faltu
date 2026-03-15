@@ -518,14 +518,13 @@ export const getFiveSecondStats = async (daysBack = 7) => {
 export const getReflectionBreakdown = async (daysBack = 7) => {
     if (!db) return {};
     try {
-        const cutoff = Date.now() - daysBack * 24 * 60 * 60 * 1000;
         const [results] = await db.executeSql(
             `SELECT trigger_type, COUNT(*) as count
              FROM reflections
-             WHERE timestamp >= ?
+             WHERE timestamp > (CAST(strftime('%s', 'now') AS INTEGER) - (? * 24 * 60 * 60)) * 1000
              GROUP BY trigger_type
              ORDER BY count DESC`,
-            [cutoff]
+            [daysBack]
         );
         const breakdown = {};
         let total = 0;
@@ -632,5 +631,32 @@ export const getHeatSignatureData = async () => {
     } catch (error) {
         console.error('[PresencePulse DB] Get heat signature error:', error);
         return Array(24).fill(null).map((_, i) => ({ hour: i, micro_check_count: 0, phubbing_count: 0, burst_count: 0 }));
+    }
+};
+
+export const seedReflectionData = async () => {
+    if (!db) return;
+    try {
+        const now = Date.now();
+        const demoData = [
+            { type: 'Boredom', count: 12 },
+            { type: 'Anxiety', count: 4 },
+            { type: 'Pure habit', count: 15 },
+            { type: 'Notification', count: 5 },
+            { type: 'Curiosity', count: 3 }
+        ];
+
+        for (const item of demoData) {
+            for (let i = 0; i < item.count; i++) {
+                const randomTime = now - (Math.random() * 3 * 24 * 60 * 60 * 1000);
+                await db.executeSql(
+                    `INSERT INTO reflections (timestamp, trigger_type) VALUES (?, ?)`,
+                    [randomTime, item.type]
+                );
+            }
+        }
+        console.log('[PresencePulse DB] Seeded reflection data successfully!');
+    } catch (error) {
+        console.error('[PresencePulse DB] Seeding error:', error);
     }
 };
